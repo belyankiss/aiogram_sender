@@ -76,3 +76,6 @@ class BaseKeyboard:
 
 class HelloKB(BaseKeyboard):
     hi = InlineKeyboardButton(text="Привет {value}", callback_data="hello")
+
+class StartKB(BaseKeyboard):
+    foo = InlineKeyboardButton(text="Start", callback_data="/start")

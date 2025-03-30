@@ -2,7 +2,7 @@ from typing import Optional
 
 from aiogram.types import InlineKeyboardButton
 
-from aiogram_sender.keyboard import BaseKeyboard, HelloKB
+from aiogram_sender.keyboard import BaseKeyboard, HelloKB, StartKB
 
 
 class BaseWindow:
@@ -20,3 +20,7 @@ class BaseWindow:
 class Hello(BaseWindow):
     text = "Привет!!!"
     keyboard = HelloKB
+
+class Ans(BaseWindow):
+    text = "Ты нажал на кнопку!!!"
+    keyboard = StartKB
