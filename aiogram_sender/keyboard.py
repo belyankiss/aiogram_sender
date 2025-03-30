@@ -65,10 +65,14 @@ class BaseKeyboard:
                 buttons.append(button)
         return buttons
 
+    @staticmethod
+    def _format_button(button, kwargs):
+        if isinstance(button, InlineKeyboardButton) and "url" in kwargs:
+            return InlineKeyboardButton(text=button.text.format(**kwargs), url=kwargs["url"])
+        return InlineKeyboardButton(text=button.text.format(**kwargs),
+                                    callback_data=button.callback_data.format(**kwargs))
 
 
-class D(BaseKeyboard):
-    button = InlineKeyboardButton(text="href", url="{url}")
 
-if __name__ == '__main__':
-    D().build(url="https://sdfsd.fg")
+class HelloKB(BaseKeyboard):
+    hi = InlineKeyboardButton(text="Привет {value}", callback_data="hello")

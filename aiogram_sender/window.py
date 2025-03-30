@@ -2,7 +2,7 @@ from typing import Optional
 
 from aiogram.types import InlineKeyboardButton
 
-from aiogram_sender.keyboard import BaseKeyboard
+from aiogram_sender.keyboard import BaseKeyboard, HelloKB
 
 
 class BaseWindow:
@@ -16,3 +16,7 @@ class BaseWindow:
             "caption": cls.text,
             "reply_markup": cls.keyboard.build(edit_inline, **kwargs)
         }
+
+class Hello(BaseWindow):
+    text = "Привет!!!"
+    keyboard = HelloKB
