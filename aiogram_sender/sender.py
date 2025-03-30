@@ -17,17 +17,37 @@ class Send:
         self.state: FSMContext = state
         self.window: Optional[Type["BaseWindow"]] = None
 
-    def add_window(self, window: Type["BaseWindow"]):
+    def add_window(self, window: Type["BaseWindow"]) -> None:
+        """
+        Этот метод добавляет уже готовое окно для дальнейшего использования.
+        :param window: BaseWindow
+        :return: None
+        """
         self.window = window
 
     async def send_message(self,
                            chat_id: int,
                            edit_inline: Optional[InlineKeyboardButton] = None,
+                           url: Optional[str] = None,
+                           data: Optional[Iterable[Any]] = None,
+                           sizes: Iterable[int] = (1, ),
                            **kwargs):
+        """
+        Этот метод отправляет сообщение конкретному пользователю. Можно с кнопкой.
+        :param chat_id: int - Telegram ID
+        :param edit_inline: Inline button для модификации и добавления
+        :param url: Добавление ссылки на кнопку
+        :param data: Любой итерабельный объект для внесения изменений в кнопки
+        :param sizes: Размер клавиатуры. Только итерабельный объект из целых чмсел.
+        :param kwargs:
+        :return:
+        """
+        if not self.window:
+            raise RuntimeError("Окно (window) не установлено. Используйте add_window().")
 
         await self.event.bot.send_message(
             chat_id=chat_id,
-            **self.window().build(edit_inline, **kwargs)
+            **self.window().build(edit_inline, url, data, sizes, **kwargs)
         )
 
     async def auto_answer(

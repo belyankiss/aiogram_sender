@@ -30,6 +30,7 @@ class BaseKeyboard:
     @classmethod
     def build(cls,
               edit_inline: InlineKeyboardButton = None,
+              url: Optional[str] = None,
               data: Optional[Iterable[Any]]=None,
               sizes: Iterable[int] = (1, ),
               **kwargs) -> Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup]]:
@@ -38,7 +39,7 @@ class BaseKeyboard:
 
         if not edit_inline:
 
-            buttons = cls._collection(cls, not_dunder, **kwargs)
+            buttons = cls._collection(cls, not_dunder, url=url, **kwargs)
 
         else:
             if data:
@@ -55,25 +56,21 @@ class BaseKeyboard:
 
 
     @staticmethod
-    def _collection(cls, not_dunder, **kwargs) -> List[Optional[Union[InlineKeyboardButton, KeyboardButton]]]:
+    def _collection(cls, not_dunder, url: Optional[str] = None, **kwargs) -> List[Optional[Union[InlineKeyboardButton, KeyboardButton]]]:
         buttons = []
         for value in not_dunder:
             button = getattr(cls, value)
             if isinstance(button, (InlineKeyboardButton, KeyboardButton)):
-                if isinstance(button, InlineKeyboardButton) and "url" in kwargs:
-                    button = InlineKeyboardButton(text=button.text.format(**kwargs), url=kwargs["url"])
+                if isinstance(button, InlineKeyboardButton) and url:
+                    if not url.startswith("https://"):
+                        raise AttributeError("URL должен обязательно начинаться с https://")
+                    button = InlineKeyboardButton(text=button.text.format(**kwargs), url=url)
                 elif isinstance(button, InlineKeyboardButton):
                     button = InlineKeyboardButton(text=button.text.format(**kwargs),
                                                   callback_data=button.callback_data.format(**kwargs))
                 buttons.append(button)
         return buttons
 
-    @staticmethod
-    def _format_button(button, kwargs):
-        if isinstance(button, InlineKeyboardButton) and "url" in kwargs:
-            return InlineKeyboardButton(text=button.text.format(**kwargs), url=kwargs["url"])
-        return InlineKeyboardButton(text=button.text.format(**kwargs),
-                                    callback_data=button.callback_data.format(**kwargs))
 
 
 

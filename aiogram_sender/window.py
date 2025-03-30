@@ -13,13 +13,14 @@ class BaseWindow:
     @classmethod
     def build(cls,
               edit_inline: Optional[InlineKeyboardButton] = None,
+              url: Optional[str] = None,
               data: Optional[Iterable[Any]] = None,
               sizes: Iterable[int] = (1,),
               **kwargs):
         return {
             "text": cls.text,
             "caption": cls.text,
-            "reply_markup": cls.keyboard.build(edit_inline, data, sizes, **kwargs)
+            "reply_markup": cls.keyboard.build(edit_inline, url, data, sizes, **kwargs)
         }
 
 class Hello(BaseWindow):
