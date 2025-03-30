@@ -28,7 +28,11 @@ class BuilderKeyboard:
 
 class BaseKeyboard:
     @classmethod
-    def build(cls, edit_inline: InlineKeyboardButton = None, **kwargs) -> Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup]]:
+    def build(cls,
+              edit_inline: InlineKeyboardButton = None,
+              data: Optional[Iterable[Any]]=None,
+              sizes: Iterable[int] = (1, ),
+              **kwargs) -> Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup]]:
         buttons = []
         not_dunder = {k: v for k, v in cls.__dict__.items() if not k.startswith("_")}
 
@@ -37,7 +41,6 @@ class BaseKeyboard:
             buttons = cls._collection(cls, not_dunder, **kwargs)
 
         else:
-            data: Iterable[Any] = kwargs.get("data", [])
             if data:
                 for value in data:
                     buttons.append(
@@ -46,7 +49,7 @@ class BaseKeyboard:
                             callback_data=edit_inline.callback_data.format(value=value)
                         )
                     )
-        sizes = kwargs.get("sizes", (1, ))
+
         reply_markup = BuilderKeyboard(buttons, *sizes)
         return reply_markup.create()
 

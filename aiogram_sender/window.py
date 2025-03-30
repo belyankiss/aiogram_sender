@@ -1,4 +1,5 @@
-from typing import Optional
+from collections.abc import Iterable
+from typing import Optional, Any
 
 from aiogram.types import InlineKeyboardButton
 
@@ -10,11 +11,15 @@ class BaseWindow:
     keyboard: Optional[BaseKeyboard] = None
 
     @classmethod
-    def build(cls, edit_inline: Optional[InlineKeyboardButton] = None, **kwargs):
+    def build(cls,
+              edit_inline: Optional[InlineKeyboardButton] = None,
+              data: Optional[Iterable[Any]] = None,
+              sizes: Iterable[int] = (1,),
+              **kwargs):
         return {
             "text": cls.text,
             "caption": cls.text,
-            "reply_markup": cls.keyboard.build(edit_inline, **kwargs)
+            "reply_markup": cls.keyboard.build(edit_inline, data, sizes, **kwargs)
         }
 
 class Hello(BaseWindow):
