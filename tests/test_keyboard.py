@@ -1,6 +1,6 @@
 # test_buttons.py
 import pytest
-from aiogram_sender.message_class import Button, ButtonError, InlineKeyboardButton, KeyboardButton
+from aiogram_sender.base_button import Button, ButtonError, InlineKeyboardButton, KeyboardButton
 
 def test_build_single_button():
     btn = Button(InlineKeyboardButton, "Test", url="https://example.com")
