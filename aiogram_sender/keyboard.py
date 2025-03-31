@@ -1,5 +1,6 @@
 from typing import List, Union, Optional, Iterable, Any
 
+from aiogram.filters.callback_data import CallbackData
 from aiogram.types import InlineKeyboardButton, KeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
@@ -52,7 +53,17 @@ class BaseKeyboard:
                     )
 
         reply_markup = BuilderKeyboard(buttons, *sizes)
-        return reply_markup.create()
+        setattr(cls, "kb", reply_markup.create())
+        return getattr(cls, "kb")
+
+    def __init_subclass__(cls, **kwargs):
+        cd = kwargs.get("cd")
+        if cd:
+            cls.cd: CallbackData = cd()
+        super().__init_subclass__()
+
+
+
 
 
     @staticmethod
@@ -71,11 +82,18 @@ class BaseKeyboard:
                 buttons.append(button)
         return buttons
 
+    def __repr__(self):
+        return f"{self.__dict__}"
+
+class CD(CallbackData, prefix="cd"):
+    acton: str = "3"
 
 
-
-class HelloKB(BaseKeyboard):
-    hi = InlineKeyboardButton(text="Привет {value}", callback_data="hello")
+class HelloKB(BaseKeyboard, cd=CD):
+    hi = InlineKeyboardButton(text="Привет", callback_data="hello")
 
 class StartKB(BaseKeyboard):
     foo = InlineKeyboardButton(text="Start", callback_data="/start")
+
+if __name__ == '__main__':
+    print(HelloKB().cd.pack())
