@@ -1,135 +1,194 @@
-from typing import Union, Optional, Type, Iterable, Any
+import logging
+from typing import Union, Type, Optional
 
 import aiofiles
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, BufferedInputFile, UserProfilePhotos
+from aiogram.types import (Message,
+                           CallbackQuery,
+                           InlineKeyboardButton,
+                           KeyboardButton,
+                           InlineKeyboardMarkup,
+                           ReplyKeyboardMarkup,
+                           BufferedInputFile,
+                           UserProfilePhotos)
+from pydantic import ValidationError
 
+from aiogram_sender.button import Button, KeyboardConfig
+from aiogram_sender.keyboard import Keyboard
 from aiogram_sender.window import BaseWindow
+from aiogram_sender.exceptions import EmptyTextError
 
 
 class Send:
+    """
+    Класс для отправки сообщения в чат с автоматическим определение типа сообщения.
+    """
+
     def __init__(
             self,
             event: Union[Message, CallbackQuery],
-            state: Optional[FSMContext] = None
+            state: FSMContext
     ):
         self.event: Union[Message, CallbackQuery] = event
         self.state: FSMContext = state
-        self.window: Optional[Type["BaseWindow"]] = None
+        self.text = None
+        self.reply_markup: Union[InlineKeyboardMarkup, ReplyKeyboardMarkup, None] = None
+        self._photo: Optional[str] = None
+        self._user_photo: bool = False
 
-    def add_window(self, window: Type["BaseWindow"]) -> None:
+
+    def add_window(
+            self,
+            interface: Union[Type["BaseWindow"], str],
+            config: KeyboardConfig,
+            photo: Optional[str] = None,
+            user_photo: bool = False,
+            **kwargs) -> None:
         """
-        Этот метод добавляет уже готовое окно для дальнейшего использования.
-        :param window: BaseWindow
+        Добавление окна для отправки, содержащие текст и кнопки, если они нужны.
+        :param interface: Используется подкласс BaseWindow или строковое представление.
+        :param config: Класс KeyboardConfig
+        :param photo: Путь к файлу с фото, либо ID телеграм фото
+        :param user_photo: Если истина, то будет отправлено сообщение с прикрепленным фото из фото пользователя.
+        :param kwargs: Можно использовать для передачи параметров для форматирования строк через .format()
         :return: None
         """
-        self.window = window
 
-    async def send_message(self,
-                           chat_id: int,
-                           edit_inline: Optional[InlineKeyboardButton] = None,
-                           url: Optional[str] = None,
-                           data: Optional[Iterable[Any]] = None,
-                           sizes: Iterable[int] = (1, ),
-                           **kwargs):
-        """
-        Этот метод отправляет сообщение конкретному пользователю. Можно с кнопкой.
-        :param chat_id: int - Telegram ID
-        :param edit_inline: Inline button для модификации и добавления
-        :param url: Добавление ссылки на кнопку
-        :param data: Любой итерабельный объект для внесения изменений в кнопки
-        :param sizes: Размер клавиатуры. Только итерабельный объект из целых чмсел.
-        :param kwargs:
-        :return:
-        """
-        if not self.window:
-            raise RuntimeError("Окно (window) не установлено. Используйте add_window().")
+        self._photo = photo
+        self._user_photo = user_photo
 
-        await self.event.bot.send_message(
-            chat_id=chat_id,
-            **self.window().build(edit_inline, url, data, sizes, **kwargs)
-        )
-
-    async def auto_answer(
-            self,
-            edit_inline: Optional[InlineKeyboardButton] = None,
-            data: Optional[Iterable[Any]] = None,
-            photo_id: Optional[str] = None,
-            photo_path: Optional[str] = None,
-            user_photo: bool = False,
-            delete_photo: bool = False,
-            sizes: Iterable[int] = (1, ),
-            **kwargs):
-
-        if not self.window:
-            raise RuntimeError("Окно (window) не установлено. Используйте add_window().")
-
-        message: dict = self.window().build(edit_inline=edit_inline, data=data, sizes=sizes, **kwargs)
-
-        await self._delete_old(delete_photo=delete_photo)
-
-        if isinstance(self.event, Message):
-            message = await self._reformat_photo(message, photo_id, photo_path, user_photo)
-            sent_message = await (self._answer_photo(message) if "photo" in message else self._answer_message(message))
+        if isinstance(interface, type) and issubclass(interface, BaseWindow):
+            self.text = interface.message.format(**kwargs)
+            buttons = self._create_keyboard(
+                interface,
+                config
+            )
+            self.reply_markup = buttons.create_keyboard()
         else:
+            self.text = interface.format(**kwargs)
 
-            sent_message = await (self._edit_caption(message) if self._is_caption() else self._edit_text(message))
+    async def send(self, answer_callback: str = None) -> Optional[Message]:
+        """
+        Метод для отправки сообщения. Так же обрабатывает ошибку коллбэка, если не модифицировано сообщение.
+        :param answer_callback: Если передана строка, то будет показана пользователю через show_alert
+        :return: Optional[Message]
+        """
+        self._check_text()
+        if isinstance(self.event, Message):
+            return await self._send_message()
+        else:
+            try:
+                return await self._send_callback(answer_callback)
+            except TelegramBadRequest as error:
+                logging.error(f"{error} ошибка в отправке сообщения")
+                pass
 
-        if self.state:
-            await self.state.update_data(sent_message=sent_message)
+    def _check_text(self) -> None:
+        """
+        Проверка на наличие текста для сообщения.
+        :return: None
+        """
+        if not self.text or not self.text.strip():
+            raise EmptyTextError("Сообщение не может быть пустым. Используйте метод add_window()")
 
-    async def _answer_message(self, message: dict):
-        return await self.event.answer(**message)
+    async def _send_message(self) -> Message:
+        """
+        Если объект self.event - Message, то отправляется сообщение. Учитывается так же отправка фото,
+         если удовлетворены условия.
+        :return: Message
+        """
+        if self._photo or self._user_photo:
+            photo = await self._prepare_photo()
+            return await self._answer_photo(photo)
+        return await self.event.answer(text=self.text, reply_markup=self.reply_markup)
 
-    async def _answer_photo(self, message: dict) -> Message:
-        return await self.event.answer_photo(**message)
-
-    async def _answer_callback(self, message: dict, answer: bool = False) -> Message:
-        if answer:
-            return await self.event.answer(text=message.get("text"), show_alert=True)
-        return await self.event.answer()
-
-    async def _edit_text(self, message: dict):
-        return await self.event.message.edit_text(**message)
-
-    async def _edit_caption(self, message: dict):
-        return await self.event.message.edit_caption(**message)
-
-    async def _reformat_photo(self, message: dict, photo_id: str, photo_path: str, user_photo: bool):
-        if photo := photo_id or await self._load_photo(photo_path, user_photo):
-            message["photo"] = photo
-        return message
-
-    async def _load_photo(self, photo_path: str, user_photo: bool):
-        if photo_path:
-            return await self._bytes_photo(photo_path)
-        if user_photo:
+    async def _prepare_photo(self) -> Union[BufferedInputFile, str]:
+        """
+        Обработка фотографии.
+        :return: Union[BufferedInputFile, str]
+        """
+        if self._user_photo:
             return await self._get_user_photo()
-        return None
+        if "/" in self._photo:
+            return self._photo
+        return await self._reformat_photo()
 
-    @staticmethod
-    async def _bytes_photo(path: str) -> BufferedInputFile:
-        async with aiofiles.open(path, "rb") as file:
-            byte_photo = await file.read()
-            return BufferedInputFile(byte_photo, "photo")
+    async def _answer_photo(self, photo: Union[BufferedInputFile, str]) -> Message:
+        """
+        Отправка сообщения с фото.
+        :param photo: Union[BufferedInputFile, str]
+        :return: Message
+        """
+        try:
+            return await self.event.answer_photo(caption=self.text, photo=photo, reply_markup=self.reply_markup)
+        except ValidationError:
+            return await self.event.answer(text=self.text, reply_markup=self.reply_markup)
 
     async def _get_user_photo(self) -> Optional[str]:
-        user_photos: UserProfilePhotos = await self.event.bot.get_user_profile_photos(
-            user_id=self.event.from_user.id
-        )
+        """
+        Получение фотографий пользователя из профиля.
+        :return: Optional[str]
+        """
+        user_photos: UserProfilePhotos = await self.event.bot.get_user_profile_photos(self.event.from_user.id)
         if user_photos.total_count > 0:
             return user_photos.photos[0][0].file_id
-        return None
 
-    async def _delete_old(self, delete_photo: bool):
-        if delete_photo and self.state:
-            data = await self.state.get_data()
-            if sent_message := data.get("sent_message"):
-                try:
-                    await sent_message.delete()
-                except Exception as e:
-                    print(f"Ошибка при удалении сообщения: {e}")
-                await self.state.update_data(sent_message=None)
+    async def _send_callback(self, answer_callback: str) -> Message:
+        """
+        Работа с CallbackQuery
+        :param answer_callback: Сообщение для показа пользователю в режиме show_alert.
+        :return: Message
+        """
+        if answer_callback:
+            return await self.event.answer(text=answer_callback, show_alert=True)
+        else:
+            await self.event.answer()
 
-    def _is_caption(self) -> bool:
-        return bool(getattr(self.event.message, "caption", None))
+        if self.event.message.caption:
+            return await self.event.message.edit_caption(caption=self.text, reply_markup=self.reply_markup)
+        return await self.event.message.edit_text(text=self.text, reply_markup=self.reply_markup)
+
+    async def _reformat_photo(self) -> BufferedInputFile:
+        """
+        Упаковка фотографии, если передан путь к ней.
+
+        :exception: FileNotFoundError
+
+        :return: BufferedInputFile
+
+        """
+        try:
+            async with aiofiles.open(self._photo, mode="rb") as file:
+                photo = await file.read()
+                return BufferedInputFile(photo, filename="photo")
+        except FileNotFoundError:
+            logging.error(f"Файл {self._photo} не найден")
+            raise
+
+    @staticmethod
+    def _create_keyboard(
+            interface: Type["BaseWindow"],
+            config: KeyboardConfig
+    ) -> Keyboard:
+        """
+        Создание клавиатуры.
+        :param interface: Используется подкласс BaseWindow или строковое представление.
+        :param config: Класс KeyboardConfig
+        :return: Keyboard
+        """
+
+        window = interface()
+        buttons = window.build()
+        list_buttons = []
+        for button in buttons:
+            if isinstance(button, (InlineKeyboardButton, KeyboardButton)):
+                list_buttons.append(button)
+            elif isinstance(button, Button):
+                if button.data:
+                    return Keyboard(button.create_inline_buttons(
+                        config
+                    ),
+                    config.sizes)
+                list_buttons.append(button.create_button())
+        return Keyboard(list_buttons, config.sizes)
